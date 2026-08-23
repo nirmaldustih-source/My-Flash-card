@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SadaCards - SRS Flashcards</title>
+    
+    <!-- PWA Meta & Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #000000; color: #ffffff; }
+        .glass-panel { background-color: #121212; border: 1px solid #2a2a2a; }
+        
+        /* 3D Flip Animation */
+        .perspective-1000 { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; transition: transform 0.6s; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .flip-card-back { transform: rotateY(180deg); }
+        .flipped .transform-style-3d { transform: rotateY(180deg); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans selection:bg-gray-700">
+
+    <!-- HOME VIEW -->
+    <div id="home-view" class="p-4 max-w-2xl mx-auto block">
+        <!-- Top Bar -->
+        <div class="flex justify-between items-center mb-8 mt-4">
+            <h1 id="greeting" class="text-2xl font-bold text-gray-200"></h1>
+            <button onclick="toggleModal('add-deck-modal')" class="bg-gray-800 hover:bg-gray-700 text-white w-10 h-10 rounded-full flex justify-center items-center text-2xl transition">+</button>
+        </div>
+
+        <!-- Decks Grid -->
+        <div id="decks-container" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </div>
+
+    <!-- ADD DECK MODAL -->
+    <div id="add-deck-modal" class="hidden fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center px-4 z-50">
+        <div class="glass-panel p-6 rounded-xl w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Add New Deck</h2>
+            <input type="text" id="deck-name-input" placeholder="Deck Name..." class="w-full bg-black border border-gray-700 rounded p-2 mb-4 text-white focus:outline-none focus:border-gray-500">
+            <div class="flex justify-end gap-2">
+                <button onclick="toggleModal('add-deck-modal')" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                <button onclick="addDeck()" class="px-4 py-2 bg-gray-200 text-black font-bold rounded hover:bg-white">Add Deck</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD CARDS VIEW -->
+    <div id="add-cards-view" class="hidden p-4 max-w-2xl mx-auto">
+        <div class="flex items-center gap-4 mb-6 mt-4">
+            <button onclick="showHome()" class="text-gray-400 hover:text-white text-2xl">←</button>
+            <h1 id="current-deck-title" class="text-2xl font-bold"></h1>
+        </div>
+
+        <!-- Add Single Card -->
+        <div class="glass-panel p-4 rounded-xl mb-6">
+            <h2 class="font-bold mb-3 text-gray-300">Add Single Card (Basic + Reversed)</h2>
+            <textarea id="single-front" placeholder="Front..." class="w-full bg-black border border-gray-700 rounded p-2 mb-3 text-white h-16"></textarea>
+            <textarea id="single-back" placeholder="Back..." class="w-full bg-black border border-gray-700 rounded p-2 mb-3 text-white h-16"></textarea>
+            <button onclick="addSingleCard()" class="w-full py-2 bg-gray-800 hover:bg-gray-700 font-bold rounded">Add Card</button>
+            <p id="single-alert" class="text-sm mt-2 hidden text-center"></p>
+        </div>
+
+        <!-- Add Bulk Cards -->
+        <div class="glass-panel p-4 rounded-xl">
+            <h2 class="font-bold mb-3 text-gray-300">Add Bulk Cards</h2>
+            <p class="text-xs text-gray-500 mb-2">Format: Front ; Back (Separate line for each)</p>
+            <textarea id="bulk-input" placeholder="du (දූ) ; You (informal)&#10;ja (යා) ; Yes" class="w-full bg-black border border-gray-700 rounded p-2 mb-3 text-white h-40"></textarea>
+            <button onclick="addBulkCards()" class="w-full py-2 bg-gray-800 hover:bg-gray-700 font-bold rounded">Add Bulk</button>
+            <p id="bulk-alert" class="text-sm mt-2 hidden text-center"></p>
+        </div>
+    </div>
+
+    <!-- STUDY VIEW -->
+    <div id="study-view" class="hidden h-screen flex flex-col max-w-2xl mx-auto px-4 py-6">
+        <!-- Top Counts (Anki Style: New (Blue), Learn (Red), Review (Green)) -->
+        <div class="flex justify-between items-center mb-8">
+            <button onclick="showHome()" class="text-gray-400 hover:text-white text-2xl">←</button>
+            <div class="flex gap-4 text-lg font-bold">
+                <span id="count-new" class="text-blue-400 border-b-2 border-blue-400">0</span>
+                <span id="count-learn" class="text-red-400">0</span>
+                <span id="count-review" class="text-green-500">0</span>
+            </div>
+            <div class="w-6"></div>
+        </div>
+
+        <!-- Card Area -->
+        <div class="flex-grow flex items-center justify-center perspective-1000 cursor-pointer" onclick="flipCard()">
+            <div id="flashcard" class="relative w-full h-80 transform-style-3d">
+                <!-- Front -->
+                <div class="absolute inset-0 glass-panel rounded-2xl flex items-center justify-center p-6 text-center text-3xl font-bold backface-hidden">
+                    <span id="card-front-text"></span>
+                </div>
+                <!-- Back -->
+                <div class="absolute inset-0 glass-panel rounded-2xl flex items-center justify-center p-6 text-center text-3xl font-bold backface-hidden flip-card-back">
+                    <span id="card-back-text"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="h-24 mt-8 flex justify-center items-center">
+            <button id="show-answer-btn" onclick="flipCard()" class="w-full max-w-xs py-4 bg-gray-800 hover:bg-gray-700 font-bold text-xl rounded-xl transition">Show Answer</button>
+            
+            <div id="rating-buttons" class="hidden w-full flex justify-between gap-2">
+                <button onclick="rateCard(1)" class="flex-1 py-3 rounded-lg flex flex-col items-center justify-center bg-[#2c1818] border border-[#4a2a2a] hover:bg-[#3d2020] transition">
+                    <span id="time-again" class="text-xs text-red-300 font-bold"></span>
+                    <span class="text-red-400 font-bold">Again</span>
+                </button>
+                <button onclick="rateCard(2)" class="flex-1 py-3 rounded-lg flex flex-col items-center justify-center bg-[#2a1e12] border border-[#4a3520] hover:bg-[#3d2a1a] transition">
+                    <span id="time-hard" class="text-xs text-orange-300 font-bold"></span>
+                    <span class="text-orange-400 font-bold">Hard</span>
+                </button>
+                <button onclick="rateCard(3)" class="flex-1 py-3 rounded-lg flex flex-col items-center justify-center bg-[#182618] border border-[#2a452a] hover:bg-[#203620] transition">
+                    <span id="time-good" class="text-xs text-green-300 font-bold"></span>
+                    <span class="text-green-500 font-bold">Good</span>
+                </button>
+                <button onclick="rateCard(4)" class="flex-1 py-3 rounded-lg flex flex-col items-center justify-center bg-[#102430] border border-[#1a3a4c] hover:bg-[#163040] transition">
+                    <span id="time-easy" class="text-xs text-blue-300 font-bold"></span>
+                    <span class="text-blue-400 font-bold">Easy</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let decks = JSON.parse(localStorage.getItem('sadaDecks')) || [];
+        let cards = JSON.parse(localStorage.getItem('sadaCards')) || [];
+        let currentDeckId = null;
+        let studyQueue = [];
+
+        function init() {
+            setGreeting();
+            renderDecks();
+        }
+
+        function saveToLocal() {
+            localStorage.setItem('sadaDecks', JSON.stringify(decks));
+            localStorage.setItem('sadaCards', JSON.stringify(cards));
+        }
+
+        function setGreeting() {
+            const hour = new Date().getHours();
+            let greet = 'Good Evening';
+            if (hour >= 5 && hour < 12) greet = 'Good Morning';
+            else if (hour >= 12 && hour < 17) greet = 'Good Afternoon';
+            document.getElementById('greeting').innerText = greet;
+        }
+
+        function toggleModal(id) { document.getElementById(id).classList.toggle('hidden'); }
+
+        function showView(viewId) {
+            ['home-view', 'add-cards-view', 'study-view'].forEach(v => document.getElementById(v).classList.add('hidden'));
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        function showHome() { currentDeckId = null; renderDecks(); showView('home-view'); }
+
+        function showAlert(id, msg, isSuccess) {
+            const el = document.getElementById(id);
+            el.innerText = msg;
+            el.className = `text-sm mt-2 text-center block ${isSuccess ? 'text-green-500' : 'text-red-500'}`;
+            setTimeout(() => el.classList.add('hidden'), 3000);
+        }
+
+        function addDeck() {
+            const input = document.getElementById('deck-name-input');
+            const name = input.value.trim();
+            if (name) {
+                decks.push({ id: Date.now().toString(), name: name });
+                saveToLocal();
+                input.value = '';
+                toggleModal('add-deck-modal');
+                renderDecks();
+            }
+        }
+
+        function renderDecks() {
+            const container = document.getElementById('decks-container');
+            container.innerHTML = '';
+            const now = Date.now();
+            decks.forEach(deck => {
+                const deckCards = cards.filter(c => c.deckId === deck.id);
+                const newC = deckCards.filter(c => c.reps === 0).length;
+                const learnC = deckCards.filter(c => c.isLearning && c.reps > 0 && c.nextReview <= now).length;
+                const revC = deckCards.filter(c => !c.isLearning && c.nextReview <= now).length;
+
+                container.innerHTML += `
+                    <div class="glass-panel p-5 rounded-xl flex justify-between items-center transition hover:bg-gray-900 cursor-pointer" onclick="startStudy('${deck.id}')">
+                        <div>
+                            <h3 class="text-xl font-bold mb-1">${deck.name}</h3>
+                            <div class="text-xs space-x-2 font-bold">
+                                <span class="text-blue-400">${newC}</span>
+                                <span class="text-red-400">${learnC}</span>
+                                <span class="text-green-500">${revC}</span>
+                            </div>
+                        </div>
+                        <div class="relative">
+                            <button onclick="event.stopPropagation(); openAddCards('${deck.id}', '${deck.name}')" class="text-gray-400 hover:text-white px-3 py-2 text-xl font-bold rounded-full bg-gray-800">&#8942;</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function openAddCards(deckId, deckName) {
+            currentDeckId = deckId;
+            document.getElementById('current-deck-title').innerText = `Add to: ${deckName}`;
+            showView('add-cards-view');
+        }
+
+        function isDuplicate(frontText) {
+            const cleanText = frontText.trim().toLowerCase();
+            return cards.some(c => c.deckId === currentDeckId && c.front.trim().toLowerCase() === cleanText);
+        }
+
+        function createCardObj(front, back) {
+            return {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                deckId: currentDeckId,
+                front: front.trim(),
+                back: back.trim(),
+                nextReview: Date.now(),
+                interval: 0,
+                reps: 0,
+                ease: 2.5,
+                isLearning: true,
+                step: 0
+            };
+        }
+
+        function addSingleCard() {
+            const front = document.getElementById('single-front').value;
+            const back = document.getElementById('single-back').value;
+            if (!front || !back) return showAlert('single-alert', 'Fill both fields!', false);
+            if (isDuplicate(front)) return showAlert('single-alert', 'Already Added! (Duplicate)', false);
+
+            cards.push(createCardObj(front, back));
+            cards.push(createCardObj(back, front));
+            saveToLocal();
+            document.getElementById('single-front').value = '';
+            document.getElementById('single-back').value = '';
+            showAlert('single-alert', 'Successfully added! (Basic + Reversed)', true);
+        }
+
+        function addBulkCards() {
+            const input = document.getElementById('bulk-input').value;
+            if (!input.trim()) return;
+            const lines = input.split('\n');
+            let addedCount = 0, dupCount = 0;
+
+            lines.forEach(line => {
+                if (line.includes(';')) {
+                    const [front, back] = line.split(';');
+                    if (front.trim() && back.trim()) {
+                        if (!isDuplicate(front)) {
+                            cards.push(createCardObj(front, back));
+                            cards.push(createCardObj(back, front));
+                            addedCount++;
+                        } else dupCount++;
+                    }
+                }
+            });
+
+            saveToLocal();
+            document.getElementById('bulk-input').value = '';
+            let msg = `Added ${addedCount * 2} cards. `;
+            if (dupCount > 0) msg += `${dupCount} duplicates skipped!`;
+            showAlert('bulk-alert', msg, true);
+        }
+
+        // --- TRUE ANKI SM-2 LOGIC ---
+        function startStudy(deckId) {
+            currentDeckId = deckId;
+            const now = Date.now();
+            let deckCards = cards.filter(c => c.deckId === deckId);
+            studyQueue = deckCards.filter(c => c.nextReview <= now);
+            studyQueue.sort((a, b) => a.reps - b.reps);
+
+            if (studyQueue.length === 0) {
+                alert("You've finished this deck for now! Great job.");
+                return showHome();
+            }
+
+            showView('study-view');
+            updateCounts();
+            loadCard();
+        }
+
+        function updateCounts() {
+            let newC = 0, learnC = 0, revC = 0;
+            studyQueue.forEach(c => {
+                if (c.reps === 0) newC++;
+                else if (c.isLearning) learnC++;
+                else revC++;
+            });
+            document.getElementById('count-new').innerText = newC;
+            document.getElementById('count-learn').innerText = learnC;
+            document.getElementById('count-review').innerText = revC;
+        }
+
+        function formatAnkiTime(minutes) {
+            if (minutes < 60) return `<${Math.max(1, Math.round(minutes))}m`;
+            if (minutes < 1440) return `${Math.round(minutes/60)}h`;
+            const days = Math.round(minutes / 1440);
+            if (days < 30) return `${days}d`;
+            const months = (days / 30).toFixed(1);
+            if (months < 12) return `${months}mo`;
+            return `${(days / 365).toFixed(1)}y`;
+        }
+
+        function updateDynamicButtons(card) {
+            let againMin, hardMin, goodMin, easyMin;
+
+            if (card.reps === 0 || card.isLearning) {
+                againMin = 1;
+                hardMin = (card.step === 0) ? 6 : 10;
+                goodMin = (card.step === 0) ? 10 : 1440;
+                easyMin = 4 * 1440;
+            } else {
+                let currentDays = card.interval / 1440;
+                againMin = 10;
+                hardMin = currentDays * 1.2 * 1440;
+                goodMin = currentDays * card.ease * 1440;
+                easyMin = currentDays * card.ease * 1.3 * 1440;
+            }
+
+            card.calculatedIntervals = [againMin, hardMin, goodMin, easyMin];
+
+            document.getElementById('time-again').innerText = formatAnkiTime(againMin);
+            document.getElementById('time-hard').innerText = formatAnkiTime(hardMin);
+            document.getElementById('time-good').innerText = formatAnkiTime(goodMin);
+            document.getElementById('time-easy').innerText = formatAnkiTime(easyMin);
+        }
+
+        function loadCard() {
+            if (studyQueue.length === 0) return showHome();
+            const flashcard = document.getElementById('flashcard');
+            flashcard.classList.remove('flipped');
+            document.getElementById('show-answer-btn').classList.remove('hidden');
+            document.getElementById('rating-buttons').classList.add('hidden');
+
+            const card = studyQueue[0];
+            document.getElementById('card-front-text').innerHTML = card.front.replace(/\n/g, '<br>');
+            document.getElementById('card-back-text').innerHTML = card.back.replace(/\n/g, '<br>');
+            
+            updateDynamicButtons(card);
+        }
+
+        function flipCard() {
+            const flashcard = document.getElementById('flashcard');
+            if (!flashcard.classList.contains('flipped')) {
+                flashcard.classList.add('flipped');
+                document.getElementById('show-answer-btn').classList.add('hidden');
+                document.getElementById('rating-buttons').classList.remove('hidden');
+            }
+        }
+
+        function rateCard(rating) {
+            const card = studyQueue[0];
+            const now = Date.now();
+            
+            const selectedIntervalMin = card.calculatedIntervals[rating - 1];
+            card.interval = selectedIntervalMin;
+
+            if (card.reps === 0 || card.isLearning) {
+                if (rating === 1) { card.step = 0; card.isLearning = true; }
+                else if (rating === 2) { card.isLearning = true; }
+                else if (rating === 3) { 
+                    if (card.step === 0) { card.step = 1; card.isLearning = true; }
+                    else { card.isLearning = false; }
+                }
+                else if (rating === 4) { card.isLearning = false; }
+            } else {
+                if (rating === 1) { 
+                    card.ease = Math.max(1.3, card.ease - 0.20); 
+                    card.isLearning = true; 
+                    card.step = 0;
+                } else if (rating === 2) { card.ease = Math.max(1.3, card.ease - 0.15); }
+                else if (rating === 4) { card.ease += 0.15; }
+            }
+
+            card.reps++;
+            card.nextReview = now + (card.interval * 60 * 1000);
+            
+            const cardIndex = cards.findIndex(c => c.id === card.id);
+            if (cardIndex !== -1) cards[cardIndex] = card;
+            saveToLocal();
+
+            studyQueue.shift();
+            if (card.interval <= 10) studyQueue.push(card);
+
+            updateCounts();
+            loadCard();
+        }
+
+        init();
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('SW Registered successfully:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('SW Registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
